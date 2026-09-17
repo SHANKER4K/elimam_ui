@@ -235,6 +235,10 @@ function Chat({
           model_provider: selectedModel?.chef ?? "",
           model_name: selectedModel?.id ?? "",
           model_variant: variant,
+          // Pins the session to the connection that will pay for it. Builtin
+          // providers also resolve by slug; a custom connection has no slug,
+          // so this is the only way the backend can find it.
+          user_provider_id: selectedConnection?.id ?? null,
           web: true,
         }),
       });
