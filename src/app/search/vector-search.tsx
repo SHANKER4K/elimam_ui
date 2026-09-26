@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useRef, useState } from "react";
 import { BookOpenText, Search } from "lucide-react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -77,11 +78,17 @@ export function VectorSearchTool() {
   }, [collection, filters, method, pool, query, topK]);
 
   return (
-    <div className="space-y-8" dir="rtl">
-      <Card className="rounded-xl shadow-none">
-        <CardContent className="space-y-6 p-4 sm:p-6">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
+      className="space-y-8"
+      dir="rtl"
+    >
+      <Card className="rounded-2xl border-border/60 bg-card/90 shadow-sm backdrop-blur-md">
+        <CardContent className="space-y-6 p-5 sm:p-7">
           <div className="space-y-3">
-            <label className="text-base font-semibold" htmlFor="query-text">
+            <label className="text-sm font-semibold tracking-wide text-foreground/90" htmlFor="query-text">
               ما الذي تبحث عنه؟
             </label>
             <Textarea
@@ -97,28 +104,35 @@ export function VectorSearchTool() {
                   void run();
                 }
               }}
-              className="resize-y text-base leading-7"
+              className="resize-y rounded-xl border-border/80 bg-background/50 text-base leading-7 shadow-2xs focus-visible:ring-primary/40"
             />
           </div>
 
           <div className="space-y-3">
-            <span className="text-sm font-medium">ابحث في</span>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              {COLLECTIONS.map((item) => (
-                <Button
-                  key={item}
-                  type="button"
-                  variant={collection === item ? "default" : "outline"}
-                  onClick={() => {
-                    setCollection(item);
-                    setFilters({});
-                  }}
-                  className="min-h-11 justify-start px-3 text-sm"
-                >
-                  <BookOpenText className="size-4" />
-                  <span className="truncate">{COLLECTION_LABELS[item]}</span>
-                </Button>
-              ))}
+            <span className="text-xs font-semibold tracking-wider uppercase text-muted-foreground">ابحث في</span>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+              {COLLECTIONS.map((item) => {
+                const isActive = collection === item;
+                return (
+                  <Button
+                    key={item}
+                    type="button"
+                    variant={isActive ? "default" : "outline"}
+                    onClick={() => {
+                      setCollection(item);
+                      setFilters({});
+                    }}
+                    className={`min-h-12 justify-start gap-2.5 rounded-xl px-3.5 text-sm transition-all ${
+                      isActive
+                        ? "shadow-sm shadow-primary/20 ring-1 ring-primary/30"
+                        : "border-border/60 bg-background/40 hover:bg-muted/50"
+                    }`}
+                  >
+                    <BookOpenText className="size-4 opacity-75" />
+                    <span className="truncate font-medium">{COLLECTION_LABELS[item]}</span>
+                  </Button>
+                );
+              })}
             </div>
           </div>
 
@@ -134,9 +148,13 @@ export function VectorSearchTool() {
             onTopKChange={setTopK}
           />
 
-          <Button onClick={run} disabled={loading || !query.trim()} className="w-full sm:w-auto">
+          <Button
+            onClick={run}
+            disabled={loading || !query.trim()}
+            className="w-full gap-2 rounded-xl py-6 text-base font-medium shadow-sm transition-transform active:scale-[0.98] sm:w-auto sm:px-8"
+          >
             <Search className="size-4" />
-            بحث
+            بحث في المكتبة
           </Button>
         </CardContent>
       </Card>
@@ -149,6 +167,6 @@ export function VectorSearchTool() {
         duration={duration}
         onRetry={run}
       />
-    </div>
+    </motion.div>
   );
 }
