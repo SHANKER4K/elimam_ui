@@ -52,9 +52,15 @@ import {
   MessageContent,
   MessageResponse,
 } from "@/components/ai-elements/message";
+import {
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtHeader,
+} from "@/components/ai-elements/chain-of-thought";
 import { ChatContainerScrollAnchor } from "@/components/ui/chat-container";
 import { Tool } from "@/components/ui/tool";
 import { CopyButton } from "@/components/copy-button";
+import { formatToolDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type ChatModel = {
@@ -81,6 +87,16 @@ type ChatMessage =
       errorMessage?: string;
       preview?: Array<{ ids?: string; text: string }>;
     }
+  | {
+      type: "thinking";
+      role: "assistant";
+      index: number;
+      id?: string;
+      content: string;
+      status: "streaming" | "done";
+      startedAt: number;
+      durationMs?: number;
+    }
   | { type: "message"; role: "user" | "assistant"; content: string };
 
 const suggestedPrompts = [
@@ -96,6 +112,32 @@ const VARIANT_LABELS: Record<string, string> = {
   high: "مرتفع",
 };
 const variantLabel = (v: string) => VARIANT_LABELS[v] ?? v;
+
+type ThinkingItem = Extract<ChatMessage, { type: "thinking" }>;
+
+function ThinkingBlock({ msg }: { msg: ThinkingItem }) {
+  const streaming = msg.status === "streaming";
+  const duration = formatToolDuration(msg.durationMs);
+  return (
+    <ChainOfThought defaultOpen={streaming} className="my-1">
+      <ChainOfThoughtHeader>
+        {streaming
+          ? "جارٍ التفكير..."
+          : duration
+            ? `فكّر لمدة ${duration}`
+            : "تفكير"}
+      </ChainOfThoughtHeader>
+      <ChainOfThoughtContent>
+        <p
+          dir="rtl"
+          className="text-sm leading-7 text-muted-foreground whitespace-pre-wrap"
+        >
+          {msg.content}
+        </p>
+      </ChainOfThoughtContent>
+    </ChainOfThought>
+  );
+}
 
 export default function HomePage({
   models,
@@ -286,6 +328,77 @@ function Chat({
                 : m,
             ),
           );
+        } else if (eventName === "thinking_start") {
+          setStatus("streaming");
+          setMessages((prev) => [
+            ...prev,
+            {
+              type: "thinking",
+              role: "assistant",
+              index: data.index ?? 0,
+              id: data.id,
+              content: "",
+              status: "streaming",
+              startedAt: performance.now(),
+            },
+          ]);
+        } else if (eventName === "thinking_delta") {
+          setMessages((prev) => {
+            const idx = data.index ?? 0;
+            const next = prev.some(
+              (m) => m.type === "thinking" && m.index === idx,
+            )
+              ? prev
+              : [
+                  // Provider emitted a delta without thinking_start.
+                  ...prev,
+                  {
+                    type: "thinking" as const,
+                    role: "assistant" as const,
+                    index: idx,
+                    id: data.id,
+                    content: "",
+                    status: "streaming" as const,
+                    startedAt: performance.now(),
+                  },
+                ];
+            return next.map((m: ChatMessage) =>
+              m.type === "thinking" && m.index === idx
+                ? { ...m, content: m.content + (data.text ?? "") }
+                : m,
+            );
+          });
+        } else if (eventName === "thinking_end") {
+          setMessages((prev) =>
+            prev.map((m: ChatMessage) =>
+              m.type === "thinking" && m.index === (data.index ?? 0)
+                ? {
+                    ...m,
+                    status: "done",
+                    durationMs: performance.now() - m.startedAt,
+                  }
+                : m,
+            ),
+          );
+        } else if (eventName === "thinking") {
+          // Fallback whole-part event for non-streaming thinking providers:
+          // only add a completed block if nothing streamed for this id.
+          setMessages((prev) =>
+            prev.some((m) => m.type === "thinking" && m.id === data.id)
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    type: "thinking",
+                    role: "assistant",
+                    index: data.index ?? 0,
+                    id: data.id,
+                    content: data.text ?? "",
+                    status: "done",
+                    startedAt: performance.now(),
+                  },
+                ],
+          );
         } else if (eventName === "message_start") {
           setStatus("streaming");
           setMessages((prev) => [
@@ -444,6 +557,8 @@ function Chat({
                       className="w-full max-w-md text-sm m-0"
                       call={msg}
                     />
+                  ) : msg.type === "thinking" ? (
+                    <ThinkingBlock msg={msg} />
                   ) : (
                     <div
                       className={cn(msg.role === "user" && "flex justify-end")}
