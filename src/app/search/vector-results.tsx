@@ -16,6 +16,7 @@ import Link from "next/link";
 
 export interface VectorHit {
   score?: number;
+  reranker_score?: number;
   payload?: Record<string, unknown>;
   [key: string]: unknown;
 }
@@ -111,94 +112,109 @@ export function VectorResults({
       </div>
 
       <div className="space-y-3">
-        {[...results]
-          .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-          .map((hit, i) => {
-            const payload = (hit.payload ?? {}) as Record<string, unknown>;
-            const meta = metadataRows(collection, payload);
-            const text = payload.text;
-            return (
-              <motion.div
-                key={`${formatValue(payload.id)}-${i}`}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.25,
-                  delay: i * 0.04,
-                  ease: "easeOut",
-                }}
-              >
-                <Card className="group rounded-2xl border-border/60 bg-card/90 shadow-xs transition-all hover:border-primary/30 hover:shadow-md">
-                  <CardContent className="p-5 sm:p-6">
-                    <a
-                      href={
-                        ["quran", "tafsir"].includes(collection)
-                          ? `https://quran.com/${payload.surah_number}/${payload.ayah_number}`
-                          : (payload.source as string)
-                      }
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {/* The searched text */}
-                      {text !== undefined && text !== null && text !== "" ? (
-                        <p
-                          dir="rtl"
-                          className="font-arabic text-lg leading-9 sm:text-xl text-foreground/95"
-                        >
-                          {formatValue(text)}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          لا يوجد نص
-                        </p>
-                      )}
-                    </a>
-
-                    {/* Metadata as badges */}
-                    {meta.length > 0 && (
-                      <div className="mt-5 flex flex-wrap gap-2">
-                        {meta.map((m) => (
-                          <Badge
-                            key={m.key}
-                            variant="outline"
-                            className="rounded-lg border-border/80 bg-background/60 px-2.5 py-1 text-xs font-normal text-muted-foreground"
-                          >
-                            <span className="font-medium text-foreground/80 ml-1">
-                              {m.label}:
-                            </span>{" "}
-                            {m.value}
-                          </Badge>
-                        ))}
-                      </div>
+        {/* ponytail: backend sorts by cross-encoder reranker_score best-first;
+            re-sorting client-side by first-stage score scrambles that order. */}
+        {results.map((hit, i) => {
+          const payload = (hit.payload ?? {}) as Record<string, unknown>;
+          const meta = metadataRows(collection, payload);
+          const text = payload.text;
+          const reranked =
+            typeof hit.reranker_score === "number" ? hit.reranker_score : null;
+          const firstStage =
+            typeof hit.score === "number" ? hit.score : null;
+          return (
+            <motion.div
+              key={`${formatValue(payload.ids ?? payload.id)}-${i}`}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.25,
+                delay: i * 0.04,
+                ease: "easeOut",
+              }}
+            >
+              <Card className="group rounded-2xl border-border/60 bg-card/90 shadow-xs transition-all hover:border-primary/30 hover:shadow-md">
+                <CardContent className="p-5 sm:p-6">
+                  <a
+                    href={
+                      ["quran", "tafsir"].includes(collection)
+                        ? `https://quran.com/${payload.surah_number}/${payload.ayah_number}`
+                        : (payload.source as string)
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {/* The searched text */}
+                    {text !== undefined && text !== null && text !== "" ? (
+                      <p
+                        dir="rtl"
+                        className="font-arabic text-lg leading-9 sm:text-xl text-foreground/95"
+                      >
+                        {formatValue(text)}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        لا يوجد نص
+                      </p>
                     )}
+                  </a>
 
-                    <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between">
-                      <Collapsible className="w-full">
-                        <CollapsibleTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-                          >
-                            <ChevronDown className="size-3 transition-transform duration-200 group-data-[state=open]:rotate-180" />
-                            التفاصيل التقنية
-                          </Button>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <pre
-                            dir="ltr"
-                            className="mt-3 overflow-x-auto rounded-xl bg-muted/60 p-3.5 text-xs font-mono leading-relaxed text-foreground/80"
-                          >
-                            {JSON.stringify(hit, null, 2)}
-                          </pre>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            );
-          })}
+                  {/* Metadata as badges */}
+                  {(meta.length > 0 || reranked !== null || firstStage !== null) && (
+                    <div className="mt-5 flex flex-wrap gap-2">
+                    {(reranked !== null || firstStage !== null) && (
+                      <Badge
+                        variant="outline"
+                        className="rounded-lg border-border/80 bg-background/60 px-2.5 py-1 text-xs font-normal text-muted-foreground"
+                      >
+                        <span className="font-medium text-foreground/80 ml-1">
+                          {reranked !== null ? "ترتيب:" : "score:"}
+                        </span>{" "}
+                        {(reranked ?? firstStage)?.toFixed(4)}
+                      </Badge>
+                    )}
+                    {meta.map((m) => (
+                      <Badge
+                        key={m.key}
+                        variant="outline"
+                        className="rounded-lg border-border/80 bg-background/60 px-2.5 py-1 text-xs font-normal text-muted-foreground"
+                      >
+                        <span className="font-medium text-foreground/80 ml-1">
+                          {m.label}:
+                        </span>{" "}
+                        {m.value}
+                      </Badge>
+                    ))}
+                  </div>
+                  )}
+
+                  <div className="mt-4 pt-3 border-t border-border/40 flex items-center justify-between">
+                    <Collapsible className="w-full">
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          <ChevronDown className="size-3 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                          التفاصيل التقنية
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <pre
+                          dir="ltr"
+                          className="mt-3 overflow-x-auto rounded-xl bg-muted/60 p-3.5 text-xs font-mono leading-relaxed text-foreground/80"
+                        >
+                          {JSON.stringify(hit, null, 2)}
+                        </pre>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );

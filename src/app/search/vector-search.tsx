@@ -13,6 +13,7 @@ import {
   buildFiltersPayload,
   type Collection,
 } from "@/lib/vector-search-config";
+import { extractSearchError } from "@/lib/search-error";
 import { VectorResults, type VectorHit } from "./vector-results";
 
 const AdvancedSearchFilters = dynamic(
@@ -63,8 +64,19 @@ export function VectorSearchTool() {
         signal: controller.signal,
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      setResults(Array.isArray(data.results) ? data.results : []);
+      const rows: unknown[] = Array.isArray(data.results) ? data.results : [];
+      const first = rows[0];
+      // Legacy backends answered 200 with [{ error }] instead of a status code.
+      if (
+        first !== null &&
+        typeof first === "object" &&
+        "error" in first &&
+        !("payload" in first)
+      ) {
+        throw new Error(extractSearchError(rows, response.status));
+      }
+      if (!response.ok) throw new Error(extractSearchError(data, response.status));
+      setResults(rows as VectorHit[]);
     } catch (error: unknown) {
       if (error instanceof Error && error.name === "AbortError") return;
       setError(error instanceof Error ? error.message : "فشل البحث");
