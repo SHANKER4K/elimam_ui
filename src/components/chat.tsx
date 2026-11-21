@@ -68,13 +68,18 @@ export type ChatModel = {
 
 type ChatMessage =
   | {
-      type: "tool" | "tool_result";
+      type: "tool";
       role: "assistant";
-      name: string;
       callId: string;
-      content?: string;
-      output?: string;
-      desc?: string;
+      title: string;
+      subtitle?: string;
+      icon?: string;
+      status: "running" | "ok" | "empty" | "error";
+      summary?: string;
+      count?: number | null;
+      durationMs?: number | null;
+      errorMessage?: string;
+      preview?: Array<{ ids?: string; text: string }>;
     }
   | { type: "message"; role: "user" | "assistant"; content: string };
 
@@ -253,30 +258,31 @@ function Chat({
             data.detail ?? data.message ?? "حدث خطأ أثناء التوليد",
           );
         } else if (eventName === "tool") {
-          const t = data.text.toLowerCase();
-          const desc =
-            t.includes("quran") || t.includes("aya")
-              ? "Getting data from quran database"
-              : t.includes("hadith")
-                ? "Getting data from hadith database"
-                : t.includes("aqeedah")
-                  ? "Getting data from aqeedah books"
-                  : "Getting data from tafsir books";
           setMessages((prev) => [
             ...prev,
             {
               type: "tool",
               role: "assistant",
-              name: data.text,
-              callId: data.tool_call_id,
-              desc,
+              callId: data.tool_call_id ?? "",
+              title: data.title ?? data.tool_name ?? data.text,
+              subtitle: data.subtitle,
+              icon: data.icon,
+              status: data.status ?? "running",
             },
           ]);
         } else if (eventName === "tool_result") {
           setMessages((prev) =>
             prev.map((m: ChatMessage) =>
               "callId" in m && m.callId === data.tool_call_id
-                ? { ...m, output: data.content }
+                ? {
+                    ...m,
+                    status: data.status ?? "ok",
+                    summary: data.summary,
+                    count: data.count ?? null,
+                    durationMs: data.duration_ms ?? data.durationMs ?? null,
+                    errorMessage: data.message,
+                    preview: data.preview,
+                  }
                 : m,
             ),
           );
@@ -436,14 +442,7 @@ function Chat({
                   {msg.type === "tool" ? (
                     <Tool
                       className="w-full max-w-md text-sm m-0"
-                      toolPart={{
-                        type: msg.name,
-                        state: msg.output
-                          ? "output-available"
-                          : "input-streaming",
-                        input: { description: msg.desc },
-                        output: msg.output ? { text: msg.output } : undefined,
-                      }}
+                      call={msg}
                     />
                   ) : (
                     <div
