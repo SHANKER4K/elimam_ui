@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useAuth, useSession } from "@better-auth-ui/react";
 import type { AppAuthClient } from "@/lib/auth-client";
 import { fetchHistory } from "@/lib/chat-history";
+import { parseEvent } from "@/lib/sse";
 import { listMyProviders, type MyProviders } from "@/lib/providers";
 import { ApiKeyGate } from "@/components/api-key-gate";
 
@@ -199,20 +200,6 @@ function Chat({
     window.history.pushState(null, "", `/${id}`);
   }
 
-  // ponytail: SSE event payloads have a dynamic shape; we only ever read
-  // a few known keys off `data`, so `any` is honest here. Tightening to
-  // `unknown` would force pointless narrowing at every read site.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function parseEvent(raw: string): [string, any] {
-    let eventName = "";
-    let data = "";
-    for (const line of raw.split("\n")) {
-      if (line.startsWith("event:")) eventName = line.slice(6).trim();
-      if (line.startsWith("data:")) data += line.slice(5).trim();
-    }
-    const json = data ? JSON.parse(data) : {};
-    return [eventName, json];
-  }
   // ponytail: extracted so handleSubmit can re-fire it after the user
   // adds a key in the gate modal. Body is built fresh per call.
   async function runStream(text: string) {
@@ -242,10 +229,81 @@ function Chat({
           web: true,
         }),
       });
+      if (!res.ok) {
+        // The relay forwards the backend's status + JSON error body.
+        let detail = "";
+        try {
+          const err = await res.json();
+          detail = err.detail ?? err.message ?? err.error ?? "";
+        } catch {}
+        throw new Error(detail || `HTTP ${res.status}`);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+
+      // ponytail: SSE event payloads have a dynamic shape; we only ever read
+      // a few known keys off `data`, so `any` is honest here. Tightening to
+      // `unknown` would force pointless narrowing at every read site.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const process = (data: any, eventName: string) => {
+        if (eventName === "error") {
+          throw new Error(
+            data.detail ?? data.message ?? "حدث خطأ أثناء التوليد",
+          );
+        } else if (eventName === "tool") {
+          const t = data.text.toLowerCase();
+          const desc =
+            t.includes("quran") || t.includes("aya")
+              ? "Getting data from quran database"
+              : t.includes("hadith")
+                ? "Getting data from hadith database"
+                : t.includes("aqeedah")
+                  ? "Getting data from aqeedah books"
+                  : "Getting data from tafsir books";
+          setMessages((prev) => [
+            ...prev,
+            {
+              type: "tool",
+              role: "assistant",
+              name: data.text,
+              callId: data.tool_call_id,
+              desc,
+            },
+          ]);
+        } else if (eventName === "tool_result") {
+          setMessages((prev) =>
+            prev.map((m: ChatMessage) =>
+              "callId" in m && m.callId === data.tool_call_id
+                ? { ...m, output: data.content }
+                : m,
+            ),
+          );
+        } else if (eventName === "message_start") {
+          setStatus("streaming");
+          setMessages((prev) => [
+            ...prev,
+            { type: "message", role: "assistant", content: data.text ?? "" },
+          ]);
+        } else if (eventName === "text_delta") {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (!last || last.type !== "message") return prev;
+            return [
+              ...prev.slice(0, -1),
+              { ...last, content: last.content + data.text },
+            ];
+          });
+        }
+      };
+
+      const handle = (raw: string) => {
+        const [eventName, data] = parseEvent(raw);
+        // ponytail: see the `any` note above
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        process(data as any, eventName);
+      };
 
       while (true) {
         const { value, done } = await reader.read();
@@ -254,60 +312,21 @@ function Chat({
         const events = buffer.split("\n\n");
         buffer = events.pop() ?? "";
         for (const raw of events) {
-          const [eventName, data] = parseEvent(raw);
-          if (eventName === "tool") {
-            const t = data.text.toLowerCase();
-            const desc =
-              t.includes("quran") || t.includes("aya")
-                ? "Getting data from quran database"
-                : t.includes("hadith")
-                  ? "Getting data from hadith database"
-                  : t.includes("aqeedah")
-                    ? "Getting data from aqeedah books"
-                    : "Getting data from tafsir books";
-            setMessages((prev) => [
-              ...prev,
-              {
-                type: "tool",
-                role: "assistant",
-                name: data.text,
-                callId: data.tool_call_id,
-                desc,
-              },
-            ]);
-          } else if (eventName === "tool_result") {
-            setMessages((prev) =>
-              prev.map((m: ChatMessage) =>
-                "callId" in m && m.callId === data.tool_call_id
-                  ? { ...m, output: data.content }
-                  : m,
-              ),
-            );
-          } else if (eventName === "message_start") {
-            setStatus("streaming");
-            setMessages((prev) => [
-              ...prev,
-              { type: "message", role: "assistant", content: data.text ?? "" },
-            ]);
-          } else if (eventName === "text_delta") {
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (!last || last.type !== "message") return prev;
-              return [
-                ...prev.slice(0, -1),
-                { ...last, content: last.content + data.text },
-              ];
-            });
-          }
+          handle(raw);
         }
       }
-    } catch {
+      // Flush a final frame not terminated by \n\n.
+      if (buffer.trim()) handle(buffer);
+    } catch (e) {
+      const detail = e instanceof Error && e.message ? e.message : "";
       setMessages((prev) => [
         ...prev,
         {
           type: "message",
           role: "assistant",
-          content: "حدث خطأ في الاتصال. حاول مرة أخرى.",
+          content: detail
+            ? `حدث خطأ: ${detail}`
+            : "حدث خطأ في الاتصال. حاول مرة أخرى.",
         },
       ]);
     } finally {

@@ -34,11 +34,21 @@ export async function POST(req: Request) {
     body: JSON.stringify(forward),
   });
 
+  // Forward the backend's non-2xx status + JSON body as-is so the client
+  // can surface the error (400 API key not set, 404 session, 409...).
+  if (!backend.ok) {
+    return new Response(backend.body, {
+      status: backend.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   return new Response(backend.body, {
     headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-cache",
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }
