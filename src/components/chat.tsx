@@ -61,6 +61,7 @@ import { ChatContainerScrollAnchor } from "@/components/ui/chat-container";
 import { Tool } from "@/components/ui/tool";
 import { CopyButton } from "@/components/copy-button";
 import { formatToolDuration } from "@/lib/format";
+import { citationsToPlainText } from "@/lib/citation";
 import { cn } from "@/lib/utils";
 
 export type ChatModel = {
@@ -591,7 +592,7 @@ function Chat({
                   <div className="mt-2 opacity-100 md:opacity-0 md:group-hover/message:opacity-100 transition-opacity duration-150">
                     <div className="absolute left-0">
                       <CopyButton
-                        text={msg.content.trim()}
+                        text={citationsToPlainText(msg.content.trim())}
                         variant="ghost"
                         size="icon"
                       />

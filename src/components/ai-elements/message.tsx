@@ -27,6 +27,10 @@ import {
 } from "react";
 import { Streamdown, defaultRemarkPlugins } from "streamdown";
 import { visit } from "unist-util-visit";
+import {
+  CitationCard,
+  type CitationKind,
+} from "@/components/citation-card";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -350,6 +354,29 @@ export function remarkCallouts() {
 
 const streamdownPlugins = { cjk, code, math, mermaid };
 
+// Canonical citation tags (elimam#17) — persisted in messages.content.
+const CITATION_ATTRS = [
+  "id",
+  "match",
+  "surah",
+  "surah_number",
+  "ayah_number",
+  "tafsir_book",
+  "book",
+  "grade",
+  "book_name",
+  "category_name",
+];
+const CITATION_TAGS = [
+  "quran",
+  "tafsir",
+  "hadith",
+  "book",
+  "books",
+  "athar",
+  "sunnah",
+] as const;
+
 const Callout = ({ type, title, children }: any) => {
   const [isCopied, setIsCopied] = useState(false);
 
@@ -393,9 +420,20 @@ export const MessageResponse = memo(
       )}
       plugins={streamdownPlugins}
       remarkPlugins={[...Object.values(defaultRemarkPlugins), remarkCallouts]}
-      allowedTags={{ callout: ["type", "title"] }}
+      allowedTags={{
+        callout: ["type", "title"],
+        ...Object.fromEntries(CITATION_TAGS.map((t) => [t, CITATION_ATTRS])),
+      }}
       components={{
         callout: Callout,
+        ...Object.fromEntries(
+          CITATION_TAGS.map((tag) => [
+            tag,
+            (p: any) => (
+              <CitationCard kind={tag as CitationKind} {...p} />
+            ),
+          ]),
+        ),
         strong: ({ children }) => (
           <strong className="text-primary font-extrabold">{children}</strong>
         ),
