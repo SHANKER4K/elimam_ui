@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { ChatStatus } from "ai";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -179,6 +179,7 @@ function Chat({
   // it starts with the URL value. New conversation = router.push("/").
   const sessionIdRef = useRef<string | null>(sessionId ?? null);
   const pendingTextRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [myProviders, setMyProviders] = useState<MyProviders | null>(null);
   const [gate, setGate] = useState<{
     open: boolean;
@@ -259,10 +260,13 @@ function Chat({
       sessionIdRef.current = crypto.randomUUID();
       navigateToSession(sessionIdRef.current); // was router.push(...)
     }
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           message: text,
           session_id: sessionIdRef.current,
@@ -300,6 +304,7 @@ function Chat({
             data.detail ?? data.message ?? "حدث خطأ أثناء التوليد",
           );
         } else if (eventName === "tool") {
+          setStatus("streaming");
           setMessages((prev) => [
             ...prev,
             {
@@ -406,12 +411,26 @@ function Chat({
             { type: "message", role: "assistant", content: data.text ?? "" },
           ]);
         } else if (eventName === "text_delta") {
+          setStatus("streaming");
           setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (!last || last.type !== "message") return prev;
+            // Append to the latest assistant message of this turn even if
+            // tool/thinking items were pushed after it mid-turn — never
+            // cross back over a user message into a previous turn.
+            for (let i = prev.length - 1; i >= 0; i--) {
+              const m = prev[i];
+              if (m.type === "message" && m.role === "assistant") {
+                return [
+                  ...prev.slice(0, i),
+                  { ...m, content: m.content + data.text },
+                  ...prev.slice(i + 1),
+                ];
+              }
+              if (m.type === "message" && m.role === "user") break;
+            }
+            // No assistant text yet in this turn: start one implicitly.
             return [
-              ...prev.slice(0, -1),
-              { ...last, content: last.content + data.text },
+              ...prev,
+              { type: "message", role: "assistant", content: data.text ?? "" },
             ];
           });
         }
@@ -437,6 +456,10 @@ function Chat({
       // Flush a final frame not terminated by \n\n.
       if (buffer.trim()) handle(buffer);
     } catch (e) {
+      // User-initiated stop: keep the partial message, show no error.
+      // (fetch abort throws DOMException in browsers, plain Error elsewhere)
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (e instanceof Error && e.name === "AbortError") return;
       const detail = e instanceof Error && e.message ? e.message : "";
       setMessages((prev) => [
         ...prev,
@@ -449,6 +472,7 @@ function Chat({
         },
       ]);
     } finally {
+      abortRef.current = null;
       setStatus("ready");
     }
   }
@@ -506,6 +530,84 @@ function Chat({
     ],
   );
 
+  // Groups consecutive tool/thinking trace items of a turn into one stacked
+  // block so multi-step runs read as a single trace above the assistant's
+  // text, instead of disconnected floating cards. Collapsibility is provided
+  // per-item (ChainOfThought / Tool), keeping live activity visible.
+  function renderTurnItems(): ReactNode[] {
+    const out: ReactNode[] = [];
+    let i = 0;
+    while (i < messages.length) {
+      const msg = messages[i];
+      if (msg.type === "tool" || msg.type === "thinking") {
+        let j = i;
+        while (
+          j < messages.length &&
+          (messages[j].type === "tool" || messages[j].type === "thinking")
+        ) {
+          j++;
+        }
+        out.push(
+          <div
+            key={`trace-${i}`}
+            className="space-y-1 rounded-xl border border-border/60 bg-muted/30 p-1.5"
+          >
+            {messages.slice(i, j).map((tm, k) =>
+              tm.type === "tool" ? (
+                <Tool
+                  key={i + k}
+                  className="w-full max-w-md text-sm m-0"
+                  call={tm}
+                />
+              ) : tm.type === "thinking" ? (
+                <ThinkingBlock key={i + k} msg={tm} />
+              ) : null,
+            )}
+          </div>,
+        );
+        i = j;
+      } else {
+        out.push(
+          <Fragment key={i}>
+            <div className={cn(msg.role === "user" && "flex justify-end")}>
+              <Message
+                from={msg.role}
+                className={cn(
+                  "group/message relative max-w-[70ch]",
+                  msg.role === "user" && " rounded-xl px-5 py-3",
+                )}
+              >
+                <MessageContent>
+                  <MessageResponse
+                    className={cn(
+                      msg.role === "assistant" &&
+                        "text-foreground leading-relaxed",
+                    )}
+                  >
+                    {msg.content}
+                  </MessageResponse>
+                </MessageContent>
+                {msg.role === "assistant" && (
+                  <div className="mt-2 opacity-100 md:opacity-0 md:group-hover/message:opacity-100 transition-opacity duration-150">
+                    <div className="absolute left-0">
+                      <CopyButton
+                        text={msg.content.trim()}
+                        variant="ghost"
+                        size="icon"
+                      />
+                    </div>
+                  </div>
+                )}
+              </Message>
+            </div>
+          </Fragment>,
+        );
+        i++;
+      }
+    }
+    return out;
+  }
+
   return (
     <>
       <main className="flex h-svh flex-col">
@@ -550,55 +652,11 @@ function Chat({
                 </div>
               </div>
             ) : (
-              messages.map((msg, i) => (
-                <Fragment key={i}>
-                  {msg.type === "tool" ? (
-                    <Tool
-                      className="w-full max-w-md text-sm m-0"
-                      call={msg}
-                    />
-                  ) : msg.type === "thinking" ? (
-                    <ThinkingBlock msg={msg} />
-                  ) : (
-                    <div
-                      className={cn(msg.role === "user" && "flex justify-end")}
-                    >
-                      <Message
-                        from={msg.role}
-                        key={i}
-                        className={cn(
-                          "group/message relative max-w-[70ch]",
-                          msg.role === "user" && " rounded-xl px-5 py-3",
-                        )}
-                      >
-                        <MessageContent>
-                          <MessageResponse
-                            className={cn(
-                              msg.role === "assistant" &&
-                                "text-foreground leading-relaxed",
-                            )}
-                          >
-                            {msg.content}
-                          </MessageResponse>
-                        </MessageContent>
-                        {msg.role === "assistant" && (
-                          <div className="mt-2 opacity-100 md:opacity-0 md:group-hover/message:opacity-100 transition-opacity duration-150">
-                            <div className="absolute left-0">
-                              <CopyButton
-                                text={msg.content.trim()}
-                                variant="ghost"
-                                size="icon"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </Message>
-                    </div>
-                  )}
-                </Fragment>
-              ))
+              renderTurnItems()
             )}
-            {status !== "ready" && status !== "error" && (
+            {/* Skeleton only before the first visible activity of the turn;
+                once thinking/tool/text arrives, that is the indicator. */}
+            {status === "submitted" && (
               <div className="space-y-3 my-4 animate-pulse">
                 <div className="h-4 bg-muted rounded-md w-3/4" />
                 <div className="h-4 bg-muted rounded-md w-1/2" />
@@ -715,7 +773,10 @@ function Chat({
                     </PromptInputSelectContent>
                   </PromptInputSelect>
                 </PromptInputTools>
-                <PromptInputSubmit status={status} />
+                <PromptInputSubmit
+                  status={status}
+                  onStop={() => abortRef.current?.abort()}
+                />
               </PromptInputFooter>
             </PromptInput>
           </div>
