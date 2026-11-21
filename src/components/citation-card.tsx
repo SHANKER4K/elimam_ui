@@ -13,6 +13,7 @@ import { CopyButton } from "./copy-button";
 import { ExportModal } from "./export-modal";
 import {
   formatVerseCitation,
+  parseVerseRef,
   HADITH_BOOK_NAMES,
   TAFSIR_BOOK_NAMES,
 } from "@/lib/citation";
@@ -87,10 +88,11 @@ export function CitationCard(props: CitationProps) {
   let exportSource = "";
 
   if (kind === "quran" || kind === "tafsir") {
+    const parsed = parseVerseRef(kind, id);
     const surahNumber = Number(
-      props.surah_number ?? id?.split(":")[0] ?? NaN,
+      props.surah_number ?? parsed.surah ?? NaN,
     );
-    const ayah = Number(props.ayah_number ?? id?.split(":")[1] ?? NaN);
+    const ayah = Number(props.ayah_number ?? parsed.ayah ?? NaN);
     if (Number.isFinite(surahNumber) && Number.isFinite(ayah)) {
       href = `/quran/${surahNumber}/${ayah}`;
     }
@@ -131,7 +133,14 @@ export function CitationCard(props: CitationProps) {
     const number = id?.split(":")[1]?.replace(/\.0$/, "") ?? "";
     const grade = props.grade;
     const gradeStyle = grade ? GRADE_STYLES[grade] : null;
-    href = props.book && number ? `/hadith/${props.book}/${number}` : null;
+    // ponytail: citation tag ids carry the backend corpus id (bukhari:1.0),
+    // not the site's DB row id, and only 2 of 9 books are seeded locally —
+    // so a deep in-app link can't be built from the tag; sunnah.com is the
+    // issue's sanctioned fallback. Upgrade path: a number→id lookup endpoint.
+    href =
+      props.book && number
+        ? `https://sunnah.com/${props.book}:${number}`
+        : null;
     chips = (
       <>
         {bookName && <Chip>{bookName}</Chip>}
@@ -184,9 +193,15 @@ export function CitationCard(props: CitationProps) {
         {match === "fuzzy" && <Chip>تطابق تقريبي</Chip>}
       </div>
       {href ? (
-        <Link href={href} className="block">
-          {body}
-        </Link>
+        href.startsWith("http") ? (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="block">
+            {body}
+          </a>
+        ) : (
+          <Link href={href} className="block">
+            {body}
+          </Link>
+        )
       ) : (
         body
       )}

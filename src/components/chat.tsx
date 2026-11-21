@@ -286,7 +286,9 @@ function Chat({
         let detail = "";
         try {
           const err = await res.json();
-          detail = err.detail ?? err.message ?? err.error ?? "";
+          detail = [err.detail, err.message, err.error].find(
+            (v) => typeof v === "string" && v,
+          );
         } catch {}
         throw new Error(detail || `HTTP ${res.status}`);
       }
@@ -422,7 +424,7 @@ function Chat({
               if (m.type === "message" && m.role === "assistant") {
                 return [
                   ...prev.slice(0, i),
-                  { ...m, content: m.content + data.text },
+                  { ...m, content: m.content + (data.text ?? "") },
                   ...prev.slice(i + 1),
                 ];
               }
@@ -460,7 +462,29 @@ function Chat({
       // User-initiated stop: keep the partial message, show no error.
       // (fetch abort throws DOMException in browsers, plain Error elsewhere)
       if (e instanceof DOMException && e.name === "AbortError") return;
-      if (e instanceof Error && e.name === "AbortError") return;
+      if (e instanceof Error && e.name === "AbortError") {
+        // Close out anything left mid-stream so nothing looks stuck.
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.type === "thinking" && m.status === "streaming") {
+              return {
+                ...m,
+                status: "done",
+                durationMs: performance.now() - m.startedAt,
+              };
+            }
+            if (m.type === "tool" && m.status === "running") {
+              return {
+                ...m,
+                status: "error",
+                errorMessage: "أُلغي التوليد",
+              };
+            }
+            return m;
+          }),
+        );
+        return;
+      }
       const detail = e instanceof Error && e.message ? e.message : "";
       setMessages((prev) => [
         ...prev,

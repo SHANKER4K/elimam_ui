@@ -424,6 +424,10 @@ export const MessageResponse = memo(
         callout: ["type", "title"],
         ...Object.fromEntries(CITATION_TAGS.map((t) => [t, CITATION_ATTRS])),
       }}
+      // Citation tag bodies are scripture — never markdown; without this,
+      // paired */_/~ inside a quote turns children into elements and the
+      // card's flatten() yields "" → the card silently disappears.
+      literalTagContent={[...CITATION_TAGS]}
       components={{
         callout: Callout,
         ...Object.fromEntries(

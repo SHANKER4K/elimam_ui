@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { citationsToPlainText } from "./citation";
+import { citationsToPlainText, HADITH_BOOK_NAMES } from "./citation";
 
 test("citationsToPlainText strips citation tags into clean Arabic quotes", () => {
   const input =
@@ -12,4 +12,14 @@ test("citationsToPlainText strips citation tags into clean Arabic quotes", () =>
 test("citationsToPlainText leaves plain prose untouched", () => {
   const prose = "نص عادي بدون أي وسوم";
   expect(citationsToPlainText(prose)).toBe(prose);
+});
+
+test("citationsToPlainText parses 3-part tafsir ids (book:surah:ayah) into digit refs", () => {
+  const input =
+    '<tafsir id="saadi:2:255" tafsir_book="saadi" match="fuzzy">نص التفسير</tafsir>';
+  expect(citationsToPlainText(input)).toBe("«نص التفسير» [2:255]");
+});
+
+test("hadith book name map covers Sahih Muslim", () => {
+  expect(HADITH_BOOK_NAMES.muslim).toBe("صحيح مسلم");
 });
