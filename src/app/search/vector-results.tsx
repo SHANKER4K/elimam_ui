@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/collapsible";
 import { Loader2, ChevronDown, RefreshCw, Clock } from "lucide-react";
 import { DISPLAY_FIELDS, type Collection } from "@/lib/vector-search-config";
-import Link from "next/link";
 
 export interface VectorHit {
   score?: number;
