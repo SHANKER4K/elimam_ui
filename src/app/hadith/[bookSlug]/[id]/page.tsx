@@ -12,6 +12,8 @@ import { GradeBadge } from "@/components/grade-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { HadithDetailActions } from "./hadith-detail-actions";
+import { NoteBacklinks } from "@/components/notebook/notebook";
+import { HADITH_SLUG_TO_KEY } from "@/lib/notes";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { CreativeWorkJsonLd } from "@/components/structured-data";
 import { SITE_URL, truncate, hadithTitle } from "@/lib/seo";
@@ -158,6 +160,13 @@ export default async function HadithDetailPage({
             />
           </CardContent>
         </Card>
+
+        {HADITH_SLUG_TO_KEY[bookSlug] && (
+          <NoteBacklinks
+            refKey={`hadith:${HADITH_SLUG_TO_KEY[bookSlug]}:${hadith.number}`}
+            label="ملاحظاتك على هذا الحديث"
+          />
+        )}
 
         <div className="flex justify-between gap-4">
           {prev ? (

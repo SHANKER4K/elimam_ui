@@ -27,6 +27,7 @@ import {
   Moon,
   Sun,
   MessageSquare,
+  NotebookPen,
 } from "lucide-react";
 import Logo from "@/assets/logo.png";
 import { SidebarProfile } from "@/components/sidebar-profile";
@@ -38,6 +39,7 @@ const navItems = [
   { href: "/themes", label: "المواضيع", icon: Library },
   { href: "/search", label: "البحث", icon: Search },
   { href: "/favorites", label: "المفضلة", icon: Heart },
+  { href: "/notes", label: "دفتر الملاحظات", icon: NotebookPen },
   { href: "/about", label: "عن المنصة", icon: Info },
 ];
 

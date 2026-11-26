@@ -256,3 +256,17 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Notebook editor (BlockNote). Unlayered on purpose: BlockNote's own CSS is
+   unlayered, so Tailwind utilities (in @layer) cannot override it.
+   Each paragraph picks its direction from its first strong character (CSS's
+   dir="auto"), so Arabic and English blocks mix; inline-start padding leaves
+   room for the side menu, which sits on the right in RTL. */
+.notebook-editor .bn-editor {
+  padding-inline-start: 3rem;
+}
+.notebook-editor .bn-inline-content {
+  flex: 1;
+  unicode-bidi: plaintext;
+  text-align: start;
+}
