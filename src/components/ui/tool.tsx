@@ -27,7 +27,7 @@ import { useState } from "react"
 
 export type ToolPreviewRow = { ids?: string; text: string }
 
-/** Matches the enriched `tool` / `tool_result` SSE contract (elimam#15). */
+/** Tool-card fields; filled from AG-UI tool-call event metadata (lib/chat-events). */
 export type ToolCall = {
   title: string
   subtitle?: string
