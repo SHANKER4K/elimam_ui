@@ -16,6 +16,7 @@
     "db:seed": "bun run src/db/seed.ts",
     "db:seed-themes": "bun run src/db/seed-themes.ts",
     "db:migrate-search": "bun run src/db/migrate-search.ts",
+    "db:migrate-grades": "bun run src/db/migrate-grades.ts",
     "db:migrate-embeddings": "bun run src/db/migrate-embeddings.ts",
     "db:seed-embeddings": "bun run src/db/seed-embeddings.ts",
     "assets:generate": "bash scripts/generate-assets.sh"

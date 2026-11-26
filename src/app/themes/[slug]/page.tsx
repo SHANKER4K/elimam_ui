@@ -130,6 +130,8 @@ export default async function ThemePage({ params }: ThemePageProps) {
                 bookNameAr={hadith.bookNameAr}
                 bookSlug={hadith.bookSlug}
                 grade={hadith.grade}
+                gradeRaw={hadith.gradeRaw}
+                grader={hadith.grader}
               />
             ))}
           </div>

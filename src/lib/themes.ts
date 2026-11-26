@@ -37,6 +37,8 @@ export interface ThemeHadith {
   narrator: string | null;
   text: string;
   grade: string;
+  gradeRaw: string | null;
+  grader: string | null;
   note: string | null;
 }
 
@@ -108,7 +110,9 @@ export async function getThemeBySlug(slug: string): Promise<ThemeWithContent | n
       hadithNumber: hadiths.number,
       narrator: hadiths.narrator,
       text: hadiths.text,
-      grade: hadiths.grade,
+      grade: hadiths.gradeCanonical,
+      gradeRaw: hadiths.gradeRaw,
+      grader: hadiths.grader,
       note: themeHadiths.note,
     })
     .from(themeHadiths)

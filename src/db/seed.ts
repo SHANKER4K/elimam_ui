@@ -286,7 +286,11 @@ async function seedHadiths() {
           narrator,
           text: hadith.text,
           textEn: engText || null,
+          // ponytail: both seeded books are Sahihayn, so the grade is the
+          // book's own (no grader). Any other collection must carry real
+          // per-hadith grades (grade_raw/grader) or stay "unknown".
           grade: "Sahih" as const,
+          gradeCanonical: "sahih" as const,
           sharh: null as string | null,
         });
       }
