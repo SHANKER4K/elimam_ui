@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { GradeBadge } from "@/components/grade-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { HadithDetailActions } from "./hadith-detail-actions";
@@ -104,21 +105,11 @@ export default async function HadithDetailPage({
           <CardContent className="p-6 space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="secondary">حديث رقم {hadith.number}</Badge>
-              <Badge
-                variant={
-                  hadith.grade === "Sahih"
-                    ? "default"
-                    : hadith.grade === "Hasan"
-                      ? "secondary"
-                      : "destructive"
-                }
-              >
-                {hadith.grade === "Sahih"
-                  ? "صحيح"
-                  : hadith.grade === "Hasan"
-                    ? "حسن"
-                    : "ضعيف"}
-              </Badge>
+              <GradeBadge
+                grade={hadith.grade}
+                raw={hadith.gradeRaw}
+                grader={hadith.grader}
+              />
               {hadith.narrator && (
                 <span className="text-sm text-muted-foreground">
                   الراوي: {hadith.narrator}

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { CopyButton } from "./copy-button";
 import { ExportModal } from "./export-modal";
+import { GradeBadge } from "./grade-badge";
 import {
   formatVerseCitation,
   parseVerseRef,
@@ -51,13 +52,6 @@ function Chip({ children }: { children: ReactNode }) {
     </span>
   );
 }
-
-// Same palette as HadithCard's grade pills.
-const GRADE_STYLES: Record<string, { bg: string; text: string; dot: string }> = {
-  صحيح: { bg: "bg-[#EDF3EC]", text: "text-[#4A7C59]", dot: "bg-[#4A7C59]" },
-  حسن: { bg: "bg-[#FBF3DB]", text: "text-[#8B6914]", dot: "bg-[#B4882E]" },
-  ضعيف: { bg: "bg-[#FDEBEC]", text: "text-[#9B2C2C]", dot: "bg-[#C44B4B]" },
-};
 
 function flatten(children: ReactNode): string {
   if (children === null || children === undefined || typeof children === "boolean")
@@ -131,8 +125,6 @@ export function CitationCard(props: CitationProps) {
       id?.split(":")[0] ??
       "";
     const number = id?.split(":")[1]?.replace(/\.0$/, "") ?? "";
-    const grade = props.grade;
-    const gradeStyle = grade ? GRADE_STYLES[grade] : null;
     // ponytail: citation tag ids carry the backend corpus id (bukhari:1.0),
     // not the site's DB row id, and only 2 of 9 books are seeded locally —
     // so a deep in-app link can't be built from the tag; sunnah.com is the
@@ -145,14 +137,7 @@ export function CitationCard(props: CitationProps) {
       <>
         {bookName && <Chip>{bookName}</Chip>}
         {number && <Chip>حديث {number}</Chip>}
-        {gradeStyle && grade ? (
-          <span
-            className={`text-xs px-2 py-0.5 rounded-full ${gradeStyle.bg} ${gradeStyle.text} font-medium inline-flex items-center gap-1.5`}
-          >
-            <span className={`size-1.5 rounded-full ${gradeStyle.dot}`} />
-            {grade}
-          </span>
-        ) : null}
+        {props.grade && <GradeBadge grade={props.grade} raw={props.grade} />}
       </>
     );
     body = (

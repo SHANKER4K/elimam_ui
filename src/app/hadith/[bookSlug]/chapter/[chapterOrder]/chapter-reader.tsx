@@ -14,6 +14,8 @@ interface HadithData {
   narrator: string | null;
   text: string;
   grade: string;
+  gradeRaw: string | null;
+  grader: string | null;
   sanad: string | null;
   matn: string | null;
   sharh: string | null;
@@ -163,6 +165,8 @@ export function ChapterReader({
             bookNameAr={current.bookNameAr}
             bookSlug={current.bookSlug}
             grade={current.grade}
+            gradeRaw={current.gradeRaw}
+            grader={current.grader}
             sanad={current.sanad}
             matn={current.matn}
             sharh={current.sharh}

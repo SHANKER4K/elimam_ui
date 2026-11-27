@@ -14,15 +14,27 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import * as t from "drizzle-orm/pg-core";
+import { GRADE_CANONICAL } from "../lib/grade";
 
 export const revelationTypeEnum = pgEnum("revelation_type", [
   "Meccan",
   "Medinan",
 ]);
+// Legacy 3-value grade. Kept (nullable, no default) because the backend's raw
+// SQL still reads hadiths.grade; new code reads grade_canonical.
 export const hadithGradeEnum = pgEnum("hadith_grade", [
   "Sahih",
   "Hasan",
   "Dhaeef",
+]);
+// Shared grade schema, SHANKER4K/elimam#28.
+export const hadithGradeCanonicalEnum = pgEnum(
+  "hadith_grade_canonical",
+  GRADE_CANONICAL,
+);
+export const hadithGradeScopeEnum = pgEnum("hadith_grade_scope", [
+  "isnad",
+  "matn",
 ]);
 export const messageRoleEnum = pgEnum("message_role", [
   "user",
@@ -107,7 +119,14 @@ export const hadiths = pgTable(
     text: text("text").notNull(),
     textSimple: text("text_simple"),
     textEn: text("text_en"),
-    grade: hadithGradeEnum("grade").notNull().default("Sahih"),
+    grade: hadithGradeEnum("grade"),
+    // An ungraded hadith is "unknown", never silently "sahih".
+    gradeCanonical: hadithGradeCanonicalEnum("grade_canonical")
+      .notNull()
+      .default("unknown"),
+    gradeRaw: text("grade_raw"), // label as the source wrote it, e.g. "Sahih Isnaad"
+    gradeScope: hadithGradeScopeEnum("grade_scope"), // what the grade covers
+    grader: text("grader"), // e.g. "الألباني"; null = implicit (Sahihayn)
     sharh: text("sharh"),
   },
   (table) => [

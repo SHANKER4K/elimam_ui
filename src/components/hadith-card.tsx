@@ -8,6 +8,7 @@ import { ExportModal } from "./export-modal";
 import { FavoriteButton } from "./favorite-button";
 import { useFavorites, type FavoriteItem } from "@/lib/use-favorites";
 import { formatHadithCitation } from "@/lib/citation";
+import { GradeBadge } from "./grade-badge";
 import Link from "next/link";
 
 interface HadithCardProps {
@@ -18,6 +19,8 @@ interface HadithCardProps {
   bookNameAr: string;
   bookSlug: string;
   grade: string;
+  gradeRaw?: string | null;
+  grader?: string | null;
   sanad?: string | null;
   matn?: string | null;
   sharh?: string | null;
@@ -33,6 +36,8 @@ export function HadithCard({
   bookNameAr,
   bookSlug,
   grade,
+  gradeRaw,
+  grader,
   sanad,
   matn,
   sharh,
@@ -43,13 +48,6 @@ export function HadithCard({
   const { toggleFavorite, isFavorite } = useFavorites();
 
   const citationText = formatHadithCitation(text, bookNameAr, number, narrator);
-
-  const gradeBadge =
-    grade === "Sahih"
-      ? { bg: "bg-[#EDF3EC]", text: "text-[#4A7C59]", dot: "bg-[#4A7C59]", label: "صحيح" }
-      : grade === "Hasan"
-        ? { bg: "bg-[#FBF3DB]", text: "text-[#8B6914]", dot: "bg-[#B4882E]", label: "حسن" }
-        : { bg: "bg-[#FDEBEC]", text: "text-[#9B2C2C]", dot: "bg-[#C44B4B]", label: "ضعيف" };
 
   return (
     <div className="group relative bg-card rounded-xl p-5 shadow-none">
@@ -62,10 +60,7 @@ export function HadithCard({
           <span className="text-xs px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-medium tabular-nums">
             حديث رقم {number}
           </span>
-          <span className={`text-xs px-2 py-0.5 rounded-md ${gradeBadge.bg} ${gradeBadge.text} font-medium flex items-center gap-1.5`}>
-            <span className={`size-1.5 rounded-full ${gradeBadge.dot}`} />
-            {gradeBadge.label}
-          </span>
+          <GradeBadge grade={grade} raw={gradeRaw} grader={grader} />
         </div>
       </div>
 
