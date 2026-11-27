@@ -8,7 +8,13 @@ import Link from "next/link";
 import { useAuth, useSession } from "@better-auth-ui/react";
 import type { AppAuthClient } from "@/lib/auth-client";
 import { fetchHistory } from "@/lib/chat-history";
-import { parseEvent } from "@/lib/sse";
+import { HttpAgent, EventType } from "@ag-ui/client";
+import {
+  applyEvent,
+  errorMessage,
+  settleAborted,
+  type ChatMessage,
+} from "@/lib/chat-events";
 import { listMyProviders, type MyProviders } from "@/lib/providers";
 import { ApiKeyGate } from "@/components/api-key-gate";
 
@@ -72,33 +78,6 @@ export type ChatModel = {
   providers: string[];
   variants: string[];
 };
-
-type ChatMessage =
-  | {
-      type: "tool";
-      role: "assistant";
-      callId: string;
-      title: string;
-      subtitle?: string;
-      icon?: string;
-      status: "running" | "ok" | "empty" | "error";
-      summary?: string;
-      count?: number | null;
-      durationMs?: number | null;
-      errorMessage?: string;
-      preview?: Array<{ ids?: string; text: string }>;
-    }
-  | {
-      type: "thinking";
-      role: "assistant";
-      index: number;
-      id?: string;
-      content: string;
-      status: "streaming" | "done";
-      startedAt: number;
-      durationMs?: number;
-    }
-  | { type: "message"; role: "user" | "assistant"; content: string };
 
 const suggestedPrompts = [
   "ما حكم صيام الست من شوال؟",
@@ -180,7 +159,7 @@ function Chat({
   // it starts with the URL value. New conversation = router.push("/").
   const sessionIdRef = useRef<string | null>(sessionId ?? null);
   const pendingTextRef = useRef<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const agentRef = useRef<HttpAgent | null>(null);
   const [myProviders, setMyProviders] = useState<MyProviders | null>(null);
   const [gate, setGate] = useState<{
     open: boolean;
@@ -261,243 +240,56 @@ function Chat({
       sessionIdRef.current = crypto.randomUUID();
       navigateToSession(sessionIdRef.current); // was router.push(...)
     }
-    const controller = new AbortController();
-    abortRef.current = controller;
+    // One agent per run: history stays server-authoritative (fetchHistory),
+    // so only the new user message is sent; threadId is the session UUID.
+    const agent = new HttpAgent({
+      url: "/api/chat",
+      threadId: sessionIdRef.current,
+      initialMessages: [{ id: crypto.randomUUID(), role: "user", content: text }],
+    });
+    agentRef.current = agent;
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          message: text,
-          session_id: sessionIdRef.current,
-          model_provider: selectedModel?.chef ?? "",
-          model_name: selectedModel?.id ?? "",
-          model_variant: variant,
-          // Pins the session to the connection that will pay for it. Builtin
-          // providers also resolve by slug; a custom connection has no slug,
-          // so this is the only way the backend can find it.
-          user_provider_id: selectedConnection?.id ?? null,
-          web: true,
-        }),
-      });
-      if (!res.ok) {
-        // The relay forwards the backend's status + JSON error body.
-        let detail = "";
-        try {
-          const err = await res.json();
-          detail = [err.detail, err.message, err.error].find(
-            (v) => typeof v === "string" && v,
-          );
-        } catch {}
-        throw new Error(detail || `HTTP ${res.status}`);
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      // ponytail: SSE event payloads have a dynamic shape; we only ever read
-      // a few known keys off `data`, so `any` is honest here. Tightening to
-      // `unknown` would force pointless narrowing at every read site.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const process = (data: any, eventName: string) => {
-        if (eventName === "error") {
-          throw new Error(
-            data.detail ?? data.message ?? "حدث خطأ أثناء التوليد",
-          );
-        } else if (eventName === "tool") {
-          setStatus("streaming");
-          setMessages((prev) => [
-            ...prev,
-            {
-              type: "tool",
-              role: "assistant",
-              callId: data.tool_call_id ?? "",
-              title: data.title ?? data.tool_name ?? data.text,
-              subtitle: data.subtitle,
-              icon: data.icon,
-              status: data.status ?? "running",
-            },
-          ]);
-        } else if (eventName === "tool_result") {
-          setMessages((prev) =>
-            prev.map((m: ChatMessage) =>
-              "callId" in m && m.callId === data.tool_call_id
-                ? {
-                    ...m,
-                    status: data.status ?? "ok",
-                    summary: data.summary,
-                    count: data.count ?? null,
-                    durationMs: data.duration_ms ?? data.durationMs ?? null,
-                    errorMessage: data.message,
-                    preview: data.preview,
-                  }
-                : m,
-            ),
-          );
-        } else if (eventName === "thinking_start") {
-          setStatus("streaming");
-          setMessages((prev) => [
-            ...prev,
-            {
-              type: "thinking",
-              role: "assistant",
-              index: data.index ?? 0,
-              id: data.id,
-              content: "",
-              status: "streaming",
-              startedAt: performance.now(),
-            },
-          ]);
-        } else if (eventName === "thinking_delta") {
-          setMessages((prev) => {
-            const idx = data.index ?? 0;
-            const next = prev.some(
-              (m) => m.type === "thinking" && m.index === idx,
-            )
-              ? prev
-              : [
-                  // Provider emitted a delta without thinking_start.
-                  ...prev,
-                  {
-                    type: "thinking" as const,
-                    role: "assistant" as const,
-                    index: idx,
-                    id: data.id,
-                    content: "",
-                    status: "streaming" as const,
-                    startedAt: performance.now(),
-                  },
-                ];
-            return next.map((m: ChatMessage) =>
-              m.type === "thinking" && m.index === idx
-                ? { ...m, content: m.content + (data.text ?? "") }
-                : m,
-            );
-          });
-        } else if (eventName === "thinking_end") {
-          setMessages((prev) =>
-            prev.map((m: ChatMessage) =>
-              m.type === "thinking" && m.index === (data.index ?? 0)
-                ? {
-                    ...m,
-                    status: "done",
-                    durationMs: performance.now() - m.startedAt,
-                  }
-                : m,
-            ),
-          );
-        } else if (eventName === "thinking") {
-          // Fallback whole-part event for non-streaming thinking providers:
-          // only add a completed block if nothing streamed for this id.
-          setMessages((prev) =>
-            prev.some((m) => m.type === "thinking" && m.id === data.id)
-              ? prev
-              : [
-                  ...prev,
-                  {
-                    type: "thinking",
-                    role: "assistant",
-                    index: data.index ?? 0,
-                    id: data.id,
-                    content: data.text ?? "",
-                    status: "done",
-                    startedAt: performance.now(),
-                  },
-                ],
-          );
-        } else if (eventName === "message_start") {
-          setStatus("streaming");
-          setMessages((prev) => [
-            ...prev,
-            { type: "message", role: "assistant", content: data.text ?? "" },
-          ]);
-        } else if (eventName === "text_delta") {
-          setStatus("streaming");
-          setMessages((prev) => {
-            // Append to the latest assistant message of this turn even if
-            // tool/thinking items were pushed after it mid-turn — never
-            // cross back over a user message into a previous turn.
-            for (let i = prev.length - 1; i >= 0; i--) {
-              const m = prev[i];
-              if (m.type === "message" && m.role === "assistant") {
-                return [
-                  ...prev.slice(0, i),
-                  { ...m, content: m.content + (data.text ?? "") },
-                  ...prev.slice(i + 1),
-                ];
-              }
-              if (m.type === "message" && m.role === "user") break;
-            }
-            // No assistant text yet in this turn: start one implicitly.
-            return [
-              ...prev,
-              { type: "message", role: "assistant", content: data.text ?? "" },
-            ];
-          });
-        }
-      };
-
-      const handle = (raw: string) => {
-        const [eventName, data] = parseEvent(raw);
-        // ponytail: see the `any` note above
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        process(data as any, eventName);
-      };
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split("\n\n");
-        buffer = events.pop() ?? "";
-        for (const raw of events) {
-          handle(raw);
-        }
-      }
-      // Flush a final frame not terminated by \n\n.
-      if (buffer.trim()) handle(buffer);
-    } catch (e) {
-      // User-initiated stop: keep the partial message, show no error.
-      // (fetch abort throws DOMException in browsers, plain Error elsewhere)
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      if (e instanceof Error && e.name === "AbortError") {
-        // Close out anything left mid-stream so nothing looks stuck.
-        setMessages((prev) =>
-          prev.map((m) => {
-            if (m.type === "thinking" && m.status === "streaming") {
-              return {
-                ...m,
-                status: "done",
-                durationMs: performance.now() - m.startedAt,
-              };
-            }
-            if (m.type === "tool" && m.status === "running") {
-              return {
-                ...m,
-                status: "error",
-                errorMessage: "أُلغي التوليد",
-              };
-            }
-            return m;
-          }),
-        );
-        return;
-      }
-      const detail = e instanceof Error && e.message ? e.message : "";
-      setMessages((prev) => [
-        ...prev,
+      await agent.runAgent(
         {
-          type: "message",
-          role: "assistant",
-          content: detail
-            ? `حدث خطأ: ${detail}`
-            : "حدث خطأ في الاتصال. حاول مرة أخرى.",
+          runId: crypto.randomUUID(),
+          forwardedProps: {
+            model_provider: selectedModel?.chef ?? "",
+            model_name: selectedModel?.id ?? "",
+            model_variant: variant,
+            // Pins the session to the connection that will pay for it. Builtin
+            // providers also resolve by slug; a custom connection has no slug,
+            // so this is the only way the backend can find it.
+            user_provider_id: selectedConnection?.id ?? null,
+            web: true,
+          },
         },
-      ]);
+        {
+          onEvent: ({ event }) => {
+            // A user stop surfaces as a synthetic RUN_ERROR; keep it silent.
+            if (agent.abortController.signal.aborted) return;
+            if (event.type !== EventType.RUN_STARTED) setStatus("streaming");
+            const now = performance.now();
+            setMessages((prev) => applyEvent(prev, event, now));
+          },
+        },
+      );
+    } catch (e) {
+      if (agent.abortController.signal.aborted) return; // settled in finally
+      // Non-2xx from the relay: HttpAgent throws with the parsed JSON body
+      // (400 API key not set, 404 session, 409...) as `payload`.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const payload = (e as any)?.payload ?? {};
+      const detail = [payload.detail, payload.message, payload.error].find(
+        (v) => typeof v === "string" && v,
+      );
+      setMessages((prev) => [...prev, errorMessage(detail)]);
     } finally {
-      abortRef.current = null;
+      // User stop: keep the partial answer, close anything left mid-stream.
+      if (agent.abortController.signal.aborted) {
+        const now = performance.now();
+        setMessages((prev) => settleAborted(prev, now));
+      }
+      agentRef.current = null;
       setStatus("ready");
     }
   }
@@ -800,7 +592,7 @@ function Chat({
                 </PromptInputTools>
                 <PromptInputSubmit
                   status={status}
-                  onStop={() => abortRef.current?.abort()}
+                  onStop={() => agentRef.current?.abortRun()}
                 />
               </PromptInputFooter>
             </PromptInput>

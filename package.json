@@ -21,6 +21,8 @@
     "assets:generate": "bash scripts/generate-assets.sh"
   },
   "dependencies": {
+    "@ag-ui/client": "1.0.5",
+    "@ag-ui/core": "1.0.5",
     "@ai-sdk/react": "^4.0.44",
     "@base-ui/react": "^1.5.0",
     "@better-auth-ui/core": "1.7.23",
