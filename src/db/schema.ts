@@ -608,3 +608,75 @@ export const providerModelsRelations = relations(providerModels, ({ one }) => ({
     references: [userProviders.id],
   }),
 }));
+
+// ====================
+// Notebook (#15)
+// ====================
+// A user's research notes. `doc` is the BlockNote editor JSON; citations and
+// [[links]] are extracted from it on every save so backlinks are an index
+// lookup instead of a JSON scan.
+
+export const noteVisibilityEnum = pgEnum("note_visibility", [
+  "private",
+  "link",
+  "public",
+]);
+
+export const notes = pgTable(
+  "notes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    doc: jsonb("doc").default([]).notNull(),
+    visibility: noteVisibilityEnum("visibility").notNull().default("private"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("notes_user_id_idx").on(table.userId)],
+);
+
+export const noteCitations = pgTable(
+  "note_citations",
+  {
+    noteId: uuid("note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    blockId: text("block_id").notNull(),
+    // `${kind}:${corpus id}`, e.g. "quran:2:255", "hadith:bukhari:1".
+    ref: text("ref").notNull(),
+    // Snapshots: what the user cited, even if the corpus text changes later.
+    quoteSnapshot: text("quote_snapshot"),
+    gradeSnapshot: text("grade_snapshot"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("note_citations_ref_idx").on(table.ref),
+    index("note_citations_note_id_idx").on(table.noteId),
+  ],
+);
+
+export const noteLinks = pgTable(
+  "note_links",
+  {
+    fromNoteId: uuid("from_note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    toNoteId: uuid("to_note_id")
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("note_links_from_to_idx").on(table.fromNoteId, table.toNoteId),
+    index("note_links_to_idx").on(table.toNoteId),
+  ],
+);
+

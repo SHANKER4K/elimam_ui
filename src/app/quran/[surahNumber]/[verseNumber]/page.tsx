@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, ArrowLeft } from "lucide-react";
 import { VerseDetailActions } from "./verse-detail-actions";
+import { NoteBacklinks } from "@/components/notebook/notebook";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { CreativeWorkJsonLd } from "@/components/structured-data";
 import { SITE_URL, truncate, verseTitle } from "@/lib/seo";
@@ -127,6 +128,11 @@ export default async function VerseDetailPage({
             />
           </CardContent>
         </Card>
+
+        <NoteBacklinks
+          refKey={`quran:${surahNum}:${verseNum}`}
+          label="ملاحظاتك على هذه الآية"
+        />
 
         <div className="flex justify-between gap-4">
           {prev ? (
